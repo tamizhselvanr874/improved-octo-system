@@ -1,4 +1,3 @@
-import json  
 import streamlit as st  
 from pptx import Presentation  
 from pptx.enum.shapes import MSO_SHAPE_TYPE  
@@ -11,7 +10,7 @@ from docx.shared import Pt
 import fitz  # PyMuPDF  
 import os  
 import cv2  
-import numpy as np   
+import numpy as np  
   
 # Azure OpenAI credentials  
 azure_endpoint = "https://gpt-4omniwithimages.openai.azure.com/"  
@@ -25,15 +24,12 @@ azure_function_url = 'https://doc2pdf.azurewebsites.net/api/HttpTrigger1'
 # Function to convert PPT to PDF using Azure Function  
 def ppt_to_pdf(ppt_file, pdf_file):  
     mime_type = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'  
-  
     headers = {  
         "Content-Type": "application/octet-stream",  
         "Content-Type-Actual": mime_type  
     }  
-  
     with open(ppt_file, 'rb') as file:  
         response = requests.post(azure_function_url, data=file.read(), headers=headers)  
-  
         if response.status_code == 200:  
             with open(pdf_file, 'wb') as pdf_out:  
                 pdf_out.write(response.content)  
@@ -58,9 +54,7 @@ def get_image_explanation(base64_image):
             {"role": "system", "content": "You are a helpful assistant that responds in Markdown."},  
             {"role": "user", "content": [  
                 {"type": "text", "text": "Explain the content of this image in a single, coherent paragraph. The explanation should be concise and semantically meaningful, summarizing all major points from the image in one continuous paragraph. Avoid using bullet points, line breaks, or separate lists."},  
-                {"type": "image_url", "image_url": {  
-                    "url": f"data:image/png;base64,{base64_image}"}  
-                }  
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}  
             ]}  
         ],  
         "temperature": 0.7  
@@ -78,27 +72,6 @@ def get_image_explanation(base64_image):
     else:  
         st.error(f"Error: {response.status_code} - {response.text}")  
         return None  
-  
-# Function to convert PPT to PDF using Azure Function  
-def ppt_to_pdf(ppt_file, pdf_file):  
-    mime_type = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'  
-  
-    headers = {  
-        "Content-Type": "application/octet-stream",  
-        "Content-Type-Actual": mime_type  
-    }  
-  
-    with open(ppt_file, 'rb') as file:  
-        response = requests.post(azure_function_url, data=file.read(), headers=headers)  
-  
-        if response.status_code == 200:  
-            with open(pdf_file, 'wb') as pdf_out:  
-                pdf_out.write(response.content)  
-            return True  
-        else:  
-            st.error(f"File conversion failed with status code: {response.status_code}")  
-            st.error(f"Response: {response.text}")  
-            return False   
   
 def extract_text_from_ppt(ppt_file):  
     presentation = Presentation(ppt_file)  
@@ -200,7 +173,7 @@ def generate_text_insights(text_content, visual_slides, text_length):
   
     return insights  
   
-def generate_image_insights(image_content, text_length):  
+def generate_image_insights(image_content, text_length, api_key, azure_endpoint, model, api_version):  
     insights = []  
   
     # Set temperature based on text_length  
@@ -217,16 +190,33 @@ def generate_image_insights(image_content, text_length):
             "Content-Type": "application/json",  
             "api-key": api_key  
         }  
+
+        prompt = {  
+    "type": "text",  
+    "text": (  
+        "Explain the content of this image by first analyzing the text and then describing the image. "
+        "Try to reproduce the text as accurately as possible, interweaving your explanation of the image "
+        "with the text to maintain context. If the image contains multiple figures, reference each one separately "
+        "while ensuring the explanation flows smoothly. Additionally, provide a concise and semantically meaningful "
+        "summary of the entire image in a single, coherent paragraph, covering all major points without using bullet points, "
+        "line breaks, or separate lists. Ensure that the explanation is both detailed and continuous, blending the textual and visual information effectively.\n\n"
+        "Style guidelines:\n"
+        "1. Avoid using the term 'consist' or any form of that verb when describing the invention.\n"
+        "2. For slides with the heading 'Background,' treat the content as a prior solution rather than as our current disclosure.\n"
+        "Avoid highlighting any advantages or efficiencies associated with these prior solutions in your explanation. Ensure that the description remains focused on presenting the background information objectively, without suggesting improvements or benefits.\n"
+        "3. Ensure that the term 'antennas' is used consistently throughout the paragraph after its initial mention.\n"
+        "4. Capture all key wording and phrases accurately.\n"
+        "5. Reference figures accurately and appropriately within the context.\n"
+        "6. Avoid repeatedly spelling out abbreviations if they have already been defined above.\n"
+        "7. Place the summary of the slide at the beginning if it is the first bullet point.\n"
+        "8. When discussing our disclosure, use definitive language.\n"
+    )  
+}
         data = {  
             "model": model,  
             "messages": [  
                 {"role": "system", "content": "You are a helpful assistant that responds in Markdown."},  
-                {"role": "user", "content": [  
-                    {"type": "text", "text": "Explain the content of this image in a single, coherent paragraph. The explanation should be concise and semantically meaningful, summarizing all major points from the image in one continuous paragraph. Avoid using bullet points, line breaks, or separate lists."},  
-                    {"type": "image_url", "image_url": {  
-                        "url": f"data:image/png;base64,{base64_image}"}  
-                    }  
-                ]}  
+                {"role": "user", "content": [prompt, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}]}  
             ],  
             "temperature": temperature  
         }  
@@ -241,7 +231,7 @@ def generate_image_insights(image_content, text_length):
             result = response.json()  
             insights.append({"slide_number": image_data['slide_number'], "slide_title": image_data.get('slide_title', 'Untitled Slide'), "insight": result["choices"][0]["message"]["content"]})  
         else:  
-            st.error(f"Error: {response.status_code} - {response.text}")  
+            print(f"Error: {response.status_code} - {response.text}")  
             insights.append({"slide_number": image_data['slide_number'], "slide_title": image_data.get('slide_title', 'Untitled Slide'), "insight": "Error in generating insight"})  
   
     return insights  
@@ -327,7 +317,7 @@ def extract_and_clean_page_image(page, top_mask, bottom_mask, left_mask, right_m
     if not valid_contours:  
         return None  # Skip the page if no valid images/diagrams are found  
   
-    # Create a mask for the detected contours
+    # Create a mask for the detected contours  
     mask = np.zeros_like(binary)  
     for x, y, w, h in valid_contours:  
         # Apply the adjustable top, bottom, left, and right masking values from the sliders  
@@ -363,10 +353,10 @@ def extract_images_from_pdf(pdf_file, top_mask, bottom_mask, left_mask, right_ma
             page_images.append((cleaned_image, page_num + 1))  # Keep track of the slide number  
   
     pdf_document.close()  
-    return page_images  
+    return page_images   
 
 def main():  
-    st.title("PPT Insights Extractor")   
+    st.title("PPT Insights Extractor")  
   
     text_length = st.select_slider(  
         "Content Generation Slider",  
@@ -445,7 +435,7 @@ def main():
             text_insights = generate_text_insights(text_content, visual_slides, text_length)  
   
             st.info("Generating image insights...")  
-            image_insights = generate_image_insights(slide_images, text_length)  
+            image_insights = generate_image_insights(slide_images, text_length, api_key, azure_endpoint, model, api_version)  
   
             st.info("Extracting additional images...")  
             extracted_images = extract_images_from_pdf("temp_pdf.pdf", top_mask, bottom_mask, left_mask, right_mask)  
